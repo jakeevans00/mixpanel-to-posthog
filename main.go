@@ -122,8 +122,6 @@ func main() {
 	color.Green("SC Mixpanel to Posthog Data Migrator")
 	fmt.Println("------------------------------------")
 
-	// They can optionally just identify users
-	csvFile := flag.String("users-csv-file", "", "Path to CSV file to import users")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
@@ -132,44 +130,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	if *csvFile != "" {
-		// See if file exists
-		if _, err := os.Stat(*csvFile); os.IsNotExist(err) {
-			color.Red("CSV %s file does not exist or cannot be read", *csvFile)
-			os.Exit(1)
-		}
-		// Load from MP
-		users, err := LoadMixpanelUsersFromCSVFile(*csvFile)
-		if err != nil {
-			color.Red("Error loading users from CSV file: %v", err)
-			os.Exit(1)
-		}
-
-		// Import users
-		// Calculate duration
-		totalMs := DELAY_MS * 5 * len(users)
-		totalDuration := time.Duration(totalMs) * time.Millisecond
-		color.Cyan("Importing users from %s (This will take approximately %d minutes, the current time is %s)", *csvFile, int(totalDuration.Minutes()), time.Now().Format("15:04:05"))
-		s := spinner.New(spinner.CharSets[43], 100*time.Millisecond)
-		s.Start()
-		posthogClient := getPosthogClient()
-		defer posthogClient.Close()
-
-		err = PosthogImportUsers(posthogClient, users)
-		if err != nil {
-			color.Red("Error importing users: %v", err)
-			os.Exit(1)
-		}
-		s.Stop()
-		color.Green("Successfully imported %d users", len(users))
-		// Block until user presses control C
-		color.Red("It's recommended to wait several minutes for posthog to process the users.")
-		color.Red("Once you see all users in posthog console, you can exit this program.")
-		color.Red("Press control C to exit...")
-		select {}
-	}
-
-	// User inputs
 
 	// ** Get mixpanel credentials ** //
 
@@ -283,6 +243,7 @@ func main() {
 
 	s := spinner.New(spinner.CharSets[43], 100*time.Millisecond)
 	s.Start()
+	startTimestamp := time.Now()
 
 	for i, chunk := range dateChunks {
 		chunkStart, chunkEnd := chunk[0], chunk[1]
@@ -308,7 +269,7 @@ func main() {
 
 	s.Stop()
 	color.Green("\nSuccess! All chunks processed.")
-
+	color.Green("Total time taken: %s", time.Since(startTimestamp))
 	// Block until user presses control C
 	color.Red("It's recommended to wait several minutes for posthog to process the events.")
 	color.Red("Once you see all events in posthog, you can exit this program.")
