@@ -72,12 +72,47 @@ func getPosthogClient() posthog.Client {
 	posthogClient, err := posthog.NewWithConfig(posthogApiKey, posthog.Config{
 		Endpoint:       posthogEndpoint,
 		PersonalApiKey: posthogPersonalApiKey,
+		HistoricalMigration: true,
 	})
 	if err != nil {
 		color.Red("\nEncountered an error while creating Posthog client: %v", err)
 		os.Exit(1)
 	}
 	return posthogClient
+}
+
+func getChunkSize() int {
+	prompt := promptui.Prompt{
+		Label:     "Enter chunk size in days",
+		Default:   "7",
+		AllowEdit: true,
+	}
+	result, err := prompt.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
+	var chunkSize int
+	fmt.Sscanf(result, "%d", &chunkSize)
+	if chunkSize <= 0 {
+		log.Fatal("Chunk size must be greater than 0")
+	}
+	return chunkSize
+}
+
+func chunkDateRange(fromDate, toDate time.Time, chunkSizeDays int) [][2]time.Time {
+	chunks := [][2]time.Time{}
+	currentDate := fromDate
+
+	for currentDate.Before(toDate) {
+		chunkEnd := currentDate.AddDate(0, 0, chunkSizeDays)
+		if chunkEnd.After(toDate) {
+			chunkEnd = toDate
+		}
+		chunks = append(chunks, [2]time.Time{currentDate, chunkEnd})
+		currentDate = chunkEnd.AddDate(0, 0, 1)
+	}
+
+	return chunks
 }
 
 func main() {
@@ -203,11 +238,10 @@ func main() {
 	color.Yellow("\nWARNING: If you have a large dataset, consider entering smaller date ranges at a time.")
 	color.Yellow("You may crash your machine if you try to export too much data at once.\n\n")
 
-	// Prompt for from_date and to_date in the format 2006-01-02
+	// Get date range
 	fromDtPrompt := promptui.Prompt{
 		Label: "Enter from_date in the format YYYY-MM-DD",
 		Validate: func(input string) error {
-			// Validate date is in the format 2006-01-02
 			_, err := time.Parse("2006-01-02", input)
 			return err
 		},
@@ -217,15 +251,14 @@ func main() {
 		log.Fatal(err)
 		os.Exit(1)
 	}
-	to_date := promptui.Prompt{
+	toDtPrompt := promptui.Prompt{
 		Label: "Enter to_date in the format YYYY-MM-DD",
 		Validate: func(input string) error {
-			// Validate date is in the format 2006-01-02
 			_, err := time.Parse("2006-01-02", input)
 			return err
 		},
 	}
-	toDtResult, err := to_date.Run()
+	toDtResult, err := toDtPrompt.Run()
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
@@ -235,45 +268,46 @@ func main() {
 	fromDt, _ := time.Parse("2006-01-02", fromDtResult)
 	toDt, _ := time.Parse("2006-01-02", toDtResult)
 
+	// Get chunk size
+	chunkSize := getChunkSize()
+
+	// Split date range into chunks
+	dateChunks := chunkDateRange(fromDt, toDt, chunkSize)
+	totalChunks := len(dateChunks)
+
+	color.Cyan("\nProcessing %d chunks of %d days each", totalChunks, chunkSize)
+	color.Cyan("Total date range: %s to %s", fromDt.Format("2006-01-02"), toDt.Format("2006-01-02"))
+
 	posthogClient := getPosthogClient()
 	defer posthogClient.Close()
 
-	// ** Mixpanel Export ** //
-
-	// Create mixpanel exporter
-	exporter := NewExporter(version, apiUrlResult, serviceUsernameResult, servicePasswordResult, projectIdResult, fromDt, toDt)
-	color.Blue("Exporting data from Mixpanel (This may take awhile)")
 	s := spinner.New(spinner.CharSets[43], 100*time.Millisecond)
-	s.Reverse()
 	s.Start()
-	data, err := exporter.Export()
-	if err != nil {
-		color.Red("\nEncountered an error while exporting data from Mixpanel: %v", err)
-		os.Exit(1)
+
+	for i, chunk := range dateChunks {
+		chunkStart, chunkEnd := chunk[0], chunk[1]
+		s.Suffix = fmt.Sprintf(" Processing %s to %s", chunkStart.Format("2006-01-02"), chunkEnd.Format("2006-01-02"))
+
+		// Create mixpanel exporter for this chunk
+		exporter := NewExporter(version, apiUrlResult, serviceUsernameResult, servicePasswordResult, projectIdResult, chunkStart, chunkEnd)
+		data, err := exporter.Export()
+		if err != nil {
+			color.Red("\nEncountered an error while exporting data from Mixpanel: %v", err)
+			os.Exit(1)
+		}
+
+		// Import to PostHog
+		err = PosthogImport(posthogClient, data)
+		if err != nil {
+			color.Red("\nEncountered an error while importing data into Posthog: %v", err)
+			os.Exit(1)
+		}
+
+		color.Green("Completed chunk %d/%d", i+1, totalChunks)
 	}
+
 	s.Stop()
-	color.Green("Exported %d events from Mixpanel", len(data))
-
-	// ** Posthog Import ** //
-
-	totalMs := DELAY_MS * len(data)
-	totalDuration := time.Duration(totalMs) * time.Millisecond
-	color.Green("\nImporting data into Posthog (This will take approximately %s, the current time is %s)", totalDuration.String(), time.Now().Format("15:04:05"))
-	s.Reverse()
-	s.Start()
-	err = PosthogImport(posthogClient, data)
-	if err != nil {
-		color.Red("\nEncountered an error while importing data into Posthog: %v", err)
-		os.Exit(1)
-	}
-	s.Stop()
-	if err != nil {
-		color.Red("\nEncountered an error while closing Posthog client: %v", err)
-		os.Exit(1)
-	}
-
-	color.Green("Success!")
-	color.Green("Imported %d events into Posthog", len(data))
+	color.Green("\nSuccess! All chunks processed.")
 
 	// Block until user presses control C
 	color.Red("It's recommended to wait several minutes for posthog to process the events.")

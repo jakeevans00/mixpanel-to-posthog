@@ -8,7 +8,7 @@ require (
 	github.com/fatih/color v1.14.1
 	github.com/joho/godotenv v1.5.1
 	github.com/manifoldco/promptui v0.9.0
-	github.com/posthog/posthog-go v0.0.0-20240115103626-fbd687c18571
+	github.com/posthog/posthog-go v1.4.9
 )
 
 require (
@@ -23,7 +23,6 @@ require (
 	github.com/muesli/reflow v0.2.1-0.20210115123740-9e1d0d53df68 // indirect
 	github.com/muesli/termenv v0.11.1-0.20220204035834-5ac8409525e0 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
-	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
 	golang.org/x/sys v0.3.0 // indirect
 	golang.org/x/term v0.1.0 // indirect
 )

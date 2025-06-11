@@ -9,9 +9,13 @@ import (
 
 func PosthogImport(client posthog.Client, data []MixpanelDataLine) error {
 	for _, line := range data {
+		// Map the event name
 		if line.Event == "$mp_web_page_view" {
 			line.Event = "$pageview"
+		} else {
+			line.Event = MapEventName(line.Event, line.Properties)
 		}
+
 		// Construct properties
 		properties := posthog.NewProperties()
 		for k, v := range line.Properties {
