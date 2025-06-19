@@ -7,7 +7,8 @@ import (
 	"github.com/posthog/posthog-go"
 )
 
-func PosthogImport(client posthog.Client, data []MixpanelDataLine) error {
+func PosthogImport(client posthog.Client, data []MixpanelDataLine) (int, error) {
+	importedCount := 0
 	for _, line := range data {
 		// Map the event name
 		if line.Event == "$mp_web_page_view" {
@@ -31,10 +32,11 @@ func PosthogImport(client posthog.Client, data []MixpanelDataLine) error {
 		})
 		if err != nil {
 			color.Red("\nError importing event: %s", line.Event)
-			return err
+			return importedCount, err
 		}
+		importedCount++
 		// Sleep in between to avoid overloading the API
 		time.Sleep(DELAY_MS * time.Millisecond)
 	}
-	return nil
+	return importedCount, nil
 }

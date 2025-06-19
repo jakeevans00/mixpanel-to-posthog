@@ -245,6 +245,8 @@ func main() {
 	s.Start()
 	startTimestamp := time.Now()
 
+	totalEventsImported := 0
+
 	for i, chunk := range dateChunks {
 		chunkStart, chunkEnd := chunk[0], chunk[1]
 		s.Suffix = fmt.Sprintf(" Processing %s to %s", chunkStart.Format("2006-01-02"), chunkEnd.Format("2006-01-02"))
@@ -261,17 +263,20 @@ func main() {
 		color.Cyan("Exported %d records from Mixpanel for %s to %s", len(data), chunkStart.Format("2006-01-02"), chunkEnd.Format("2006-01-02"))
 
 		// Import to PostHog
-		err = PosthogImport(posthogClient, data)
+		importedCount, err := PosthogImport(posthogClient, data)
 		if err != nil {
 			color.Red("\nEncountered an error while importing data into Posthog: %v", err)
 			os.Exit(1)
 		}
 
+		totalEventsImported += importedCount
+		color.Green("Imported %d events to PostHog for chunk %d/%d", importedCount, i+1, totalChunks)
 		color.Green("Completed chunk %d/%d", i+1, totalChunks)
 	}
 
 	s.Stop()
 	color.Green("\nSuccess! All chunks processed.")
+	color.Green("Total events imported: %d", totalEventsImported)
 	color.Green("Total time taken: %s", time.Since(startTimestamp))
 	// Block until user presses control C
 	color.Red("It's recommended to wait several minutes for posthog to process the events.")
