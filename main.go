@@ -103,7 +103,7 @@ func chunkDateRange(fromDate, toDate time.Time, chunkSizeDays int) [][2]time.Tim
 	chunks := [][2]time.Time{}
 	currentDate := fromDate
 
-	for currentDate.Before(toDate) {
+	for currentDate.Before(toDate) || currentDate.Equal(toDate) {
 		chunkEnd := currentDate.AddDate(0, 0, chunkSizeDays)
 		if chunkEnd.After(toDate) {
 			chunkEnd = toDate
@@ -256,6 +256,9 @@ func main() {
 			color.Red("\nEncountered an error while exporting data from Mixpanel: %v", err)
 			os.Exit(1)
 		}
+
+		// Log the number of records exported
+		color.Cyan("Exported %d records from Mixpanel for %s to %s", len(data), chunkStart.Format("2006-01-02"), chunkEnd.Format("2006-01-02"))
 
 		// Import to PostHog
 		err = PosthogImport(posthogClient, data)

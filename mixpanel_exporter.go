@@ -60,7 +60,11 @@ func (c *Mixpanel) Export() ([]MixpanelDataLine, error) {
 
 	// Custom decoder since they have a wonky format
 	dec := json.NewDecoder(resp.Body)
+	
+	// Use a set to track seen insert_ids
+	seenInsertIds := make(map[string]bool)
 	ret := []MixpanelDataLine{}
+	duplicateCount := 0
 
 	for {
 		var line MixpanelDataLineRaw
@@ -86,12 +90,16 @@ func (c *Mixpanel) Export() ([]MixpanelDataLine, error) {
 		formattedDataLine.Properties = make(map[string]interface{})
 		formattedDataLine.Properties["$lib_version"] = fmt.Sprintf("stablecog/mp-to-ph@%s", c.Version)
 
+		var insertId string
+
 		for k, v := range line.Properties {
 			if k == "distinct_id" {
 				formattedDataLine.DistinctID = v.(string)
 			} else if k == "time" {
 				// Seconds since epoch to time.Time
 				formattedDataLine.Time = time.Unix(int64(v.(float64)), 0)
+			} else if k == "$insert_id" {
+				insertId = v.(string)
 			} else {
 				switch k {
 				case "mp_lib":
@@ -108,7 +116,25 @@ func (c *Mixpanel) Export() ([]MixpanelDataLine, error) {
 			log.Info("Skipping event with no distinct_id or time", "event", formattedDataLine.Event)
 			continue
 		}
-		ret = append(ret, formattedDataLine)
+
+		// If no insert_id, just add it (shouldn't happen but safety check)
+		if insertId == "" {
+			ret = append(ret, formattedDataLine)
+			continue
+		}
+
+		// Check if we've seen this insert_id before
+		if seenInsertIds[insertId] {
+			duplicateCount++
+			// Skip this duplicate
+		} else {
+			seenInsertIds[insertId] = true
+			ret = append(ret, formattedDataLine)
+		}
+	}
+
+	if duplicateCount > 0 {
+		log.Info("Deduplicated events", "duplicates_removed", duplicateCount, "final_count", len(ret))
 	}
 
 	return ret, nil

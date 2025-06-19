@@ -22,6 +22,7 @@ func PosthogImport(client posthog.Client, data []MixpanelDataLine) error {
 			properties.Set(k, v)
 		}
 		properties.Set("$geoip_disable", true)
+		properties.Set("$go_flag", "second")
 		err := client.Enqueue(posthog.Capture{
 			DistinctId: line.DistinctID,
 			Event:      line.Event,
